@@ -53,9 +53,40 @@ else
     echo "      hermes model"
 fi
 
-# ── 5. Verify wake word model ─────────────────────
+# ── 5. Install Piper TTS ─────────────────────────
+echo "[5/7] Installing Piper TTS..."
+PIPER_DIR=~/.local/bin
+PIPER_VOICE_DIR=~/.local/share/piper
+mkdir -p "$PIPER_DIR" "$PIPER_VOICE_DIR"
+
+if [ -f "$PIPER_DIR/piper" ]; then
+    echo "      ✓ Piper already installed"
+else
+    # Download latest Piper for arm64 (Pi 5)
+    PIPER_URL="https://github.com/rhasspy/piper/releases/latest/download/piper_linux_aarch64.tar.gz"
+    echo "      Downloading Piper..."
+    curl -L "$PIPER_URL" | tar -xz -C /tmp/
+    cp /tmp/piper/piper "$PIPER_DIR/piper"
+    chmod +x "$PIPER_DIR/piper"
+    echo "      ✓ Piper installed to $PIPER_DIR/piper"
+fi
+
+# Download voice model if not present
+VOICE_MODEL="$PIPER_VOICE_DIR/en_US-lessac-medium.onnx"
+VOICE_CONFIG="$PIPER_VOICE_DIR/en_US-lessac-medium.onnx.json"
+if [ -f "$VOICE_MODEL" ]; then
+    echo "      ✓ Voice model already present"
+else
+    echo "      Downloading voice model (en_US-lessac-medium)..."
+    VOICE_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium"
+    curl -L "$VOICE_BASE/en_US-lessac-medium.onnx" -o "$VOICE_MODEL"
+    curl -L "$VOICE_BASE/en_US-lessac-medium.onnx.json" -o "$VOICE_CONFIG"
+    echo "      ✓ Voice model downloaded"
+fi
+
+# ── 6. Verify wake word model ─────────────────────
 echo ""
-echo "[5/6] Checking wake word model..."
+echo "[6/7] Checking wake word model..."
 MODEL_PATH=~/.local/lib/python3.13/site-packages/openwakeword/resources/models/hey_jarvis_v0.1.onnx
 if [ -f "$MODEL_PATH" ]; then
     echo "      ✓ hey_jarvis_v0.1.onnx found"
@@ -66,7 +97,7 @@ else
 fi
 
 # ── 6. Copy script + audio device check ──────────
-echo "[6/6] Copying jarvis.py to home directory..."
+echo "[7/7] Copying jarvis.py to home directory..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cp "$SCRIPT_DIR/jarvis.py" ~/jarvis.py
 chmod +x ~/jarvis.py

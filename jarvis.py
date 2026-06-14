@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Jarvis Voice Assistant
-Wake word -> Record -> Transcribe -> Send to Hermes
+Wake word -> Record -> Transcribe -> Send to Hermes -> Speak response
 """
 
 import os
@@ -27,6 +27,10 @@ SILENCE_THRESHOLD = 500    # Amplitude threshold to detect silence
 SILENCE_SECONDS = 2        # Stop recording after this many seconds of silence
 WHISPER_MODEL = "tiny"     # tiny/base/small — tiny is fastest on Pi
 
+# Piper TTS config
+PIPER_BINARY = os.path.expanduser("~/.local/bin/piper")
+PIPER_VOICE = os.path.expanduser("~/.local/share/piper/en_US-lessac-medium.onnx")
+
 
 def downsample(data, from_rate, to_rate):
     """Simple downsample by integer factor."""
@@ -34,6 +38,36 @@ def downsample(data, from_rate, to_rate):
     factor = from_rate // to_rate
     resampled = audio[::factor]
     return resampled.astype(np.int16).tobytes()
+
+
+def speak(text):
+    """Convert text to speech using Piper and play it."""
+    if not os.path.exists(PIPER_BINARY):
+        print(f"[TTS] Piper not found at {PIPER_BINARY} — skipping speech.")
+        return
+    if not os.path.exists(PIPER_VOICE):
+        print(f"[TTS] Voice model not found at {PIPER_VOICE} — skipping speech.")
+        return
+
+    try:
+        # Generate WAV with Piper, pipe directly to aplay
+        piper_proc = subprocess.Popen(
+            [PIPER_BINARY, "--model", PIPER_VOICE, "--output-raw"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        aplay_proc = subprocess.Popen(
+            ["aplay", "-r", "22050", "-f", "S16_LE", "-t", "raw", "-"],
+            stdin=piper_proc.stdout,
+            stderr=subprocess.DEVNULL,
+        )
+        piper_proc.stdin.write(text.encode())
+        piper_proc.stdin.close()
+        piper_proc.stdout.close()
+        aplay_proc.wait()
+    except Exception as e:
+        print(f"[TTS] Error: {e}")
 
 
 # --- Init ---
@@ -99,17 +133,21 @@ def transcribe(frames):
 
 
 def send_to_hermes(text):
-    """Send transcribed text to Hermes CLI and print response."""
+    """Send transcribed text to Hermes CLI, print and speak response."""
     print(f"\nYou: {text}")
-    print("Hermes: ", end="", flush=True)
+    print("Jarvis: ", end="", flush=True)
     result = subprocess.run(
-        ["hermes", "--prompt", text, "--no-stream"],
+        ["hermes", "-z", text],
         capture_output=True,
         text=True,
     )
     response = result.stdout.strip() or result.stderr.strip()
     print(response)
     print()
+
+    # Speak the response
+    if response:
+        speak(response)
 
 
 def listen_for_wakeword():
