@@ -10,18 +10,52 @@ echo "================================================"
 echo ""
 
 # ── 1. System dependencies ────────────────────────
-echo "[1/5] Installing system dependencies..."
+echo "[1/6] Installing system dependencies..."
 sudo apt update -q
-sudo apt install -y portaudio19-dev
+sudo apt install -y portaudio19-dev curl
 echo "      ✓ Done"
 
 # ── 2. Python packages ────────────────────────────
-echo "[2/5] Installing Python packages..."
+echo "[2/6] Installing Python packages..."
 pip install openwakeword faster-whisper pyaudio numpy --break-system-packages
 echo "      ✓ Done"
 
-# ── 3. Verify wake word model ─────────────────────
-echo "[3/5] Checking wake word model..."
+# ── 3. Install Hermes Agent ───────────────────────
+echo "[3/6] Installing Hermes Agent..."
+if command -v hermes &> /dev/null; then
+    echo "      ✓ Hermes already installed ($(hermes --version 2>/dev/null || echo 'version unknown'))"
+else
+    curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+    # Reload shell config to get hermes in PATH
+    export PATH="$HOME/.hermes/bin:$PATH"
+    echo "      ✓ Hermes installed"
+fi
+
+# ── 4. Configure Hermes → LM Studio on DGX Spark ─
+echo "[4/6] Configuring Hermes..."
+echo ""
+echo "  Enter your DGX Spark's IP address"
+echo "  (find it by running 'ipconfig' on the DGX Spark,"
+echo "   look for IPv4 address, e.g. 192.168.1.50)"
+echo ""
+read -p "  DGX Spark IP: " DGX_IP
+
+if [ -n "$DGX_IP" ]; then
+    mkdir -p ~/.hermes
+    # Set LM Studio endpoint
+    hermes config set LM_BASE_URL "http://${DGX_IP}:1234/v1"
+    echo "      ✓ Hermes pointed at http://${DGX_IP}:1234/v1"
+    echo "      Note: Make sure LM Studio is running on the DGX Spark"
+    echo "      with the local server enabled (port 1234)."
+else
+    echo "      ⚠ Skipped — run manually later:"
+    echo "      hermes config set LM_BASE_URL http://<DGX_IP>:1234/v1"
+    echo "      hermes model"
+fi
+
+# ── 5. Verify wake word model ─────────────────────
+echo ""
+echo "[5/6] Checking wake word model..."
 MODEL_PATH=~/.local/lib/python3.13/site-packages/openwakeword/resources/models/hey_jarvis_v0.1.onnx
 if [ -f "$MODEL_PATH" ]; then
     echo "      ✓ hey_jarvis_v0.1.onnx found"
@@ -31,15 +65,12 @@ else
     echo "      Then update WAKEWORD_MODEL in jarvis.py to match."
 fi
 
-# ── 4. Copy script to home directory ─────────────
-echo "[4/5] Copying jarvis.py to home directory..."
+# ── 6. Copy script + audio device check ──────────
+echo "[6/6] Copying jarvis.py to home directory..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cp "$SCRIPT_DIR/jarvis.py" ~/jarvis.py
 chmod +x ~/jarvis.py
 echo "      ✓ Copied to ~/jarvis.py"
-
-# ── 5. Audio device check ─────────────────────────
-echo "[5/5] Audio devices detected:"
 echo ""
 echo "  -- ALSA capture devices (arecord -l) --"
 arecord -l 2>/dev/null || echo "      (no devices found)"
@@ -64,8 +95,9 @@ echo "  1. Check the device list above."
 echo "     If your mic index is NOT 1, edit jarvis.py"
 echo "     and change DEVICE_INDEX to match."
 echo ""
-echo "  2. Make sure Hermes is installed and pointing"
-echo "     at your LM Studio endpoint."
+echo "  2. Set your Hermes model:"
+echo "     hermes model"
+echo "     (select LM Studio from the list)"
 echo ""
 echo "  3. Run Jarvis:"
 echo "     python ~/jarvis.py"
