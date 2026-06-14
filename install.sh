@@ -10,29 +10,32 @@ echo "================================================"
 echo ""
 
 # ── 1. System dependencies ────────────────────────
-echo "[1/6] Installing system dependencies..."
+echo "[1/7] Installing system dependencies..."
 sudo apt update -q
 sudo apt install -y portaudio19-dev curl
 echo "      ✓ Done"
 
 # ── 2. Python packages ────────────────────────────
-echo "[2/6] Installing Python packages..."
+echo "[2/7] Installing Python packages..."
 pip install openwakeword faster-whisper pyaudio numpy --break-system-packages
 echo "      ✓ Done"
 
 # ── 3. Install Hermes Agent ───────────────────────
-echo "[3/6] Installing Hermes Agent..."
+echo "[3/7] Installing Hermes Agent..."
 if command -v hermes &> /dev/null; then
     echo "      ✓ Hermes already installed ($(hermes --version 2>/dev/null || echo 'version unknown'))"
 else
     curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-    # Reload shell config to get hermes in PATH
     export PATH="$HOME/.hermes/bin:$PATH"
+    # Persist to .bashrc if not already there
+    if ! grep -q '.hermes/bin' ~/.bashrc; then
+        echo 'export PATH="$HOME/.hermes/bin:$PATH"' >> ~/.bashrc
+    fi
     echo "      ✓ Hermes installed"
 fi
 
 # ── 4. Configure Hermes → LM Studio on DGX Spark ─
-echo "[4/6] Configuring Hermes..."
+echo "[4/7] Configuring Hermes..."
 echo ""
 echo "  Enter your DGX Spark's IP address"
 echo "  (find it by running 'ipconfig' on the DGX Spark,"
@@ -42,7 +45,6 @@ read -p "  DGX Spark IP: " DGX_IP
 
 if [ -n "$DGX_IP" ]; then
     mkdir -p ~/.hermes
-    # Set LM Studio endpoint
     hermes config set LM_BASE_URL "http://${DGX_IP}:1234/v1"
     echo "      ✓ Hermes pointed at http://${DGX_IP}:1234/v1"
     echo "      Note: Make sure LM Studio is running on the DGX Spark"
@@ -59,10 +61,15 @@ PIPER_DIR=~/.local/bin
 PIPER_VOICE_DIR=~/.local/share/piper
 mkdir -p "$PIPER_DIR" "$PIPER_VOICE_DIR"
 
+# Persist ~/.local/bin to PATH if not already there
+if ! grep -q '.local/bin' ~/.bashrc; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+fi
+export PATH="$HOME/.local/bin:$PATH"
+
 if [ -f "$PIPER_DIR/piper" ]; then
     echo "      ✓ Piper already installed"
 else
-    # Download latest Piper for arm64 (Pi 5)
     PIPER_URL="https://github.com/rhasspy/piper/releases/latest/download/piper_linux_aarch64.tar.gz"
     echo "      Downloading Piper..."
     curl -L "$PIPER_URL" | tar -xz -C /tmp/
@@ -87,16 +94,18 @@ fi
 # ── 6. Verify wake word model ─────────────────────
 echo ""
 echo "[6/7] Checking wake word model..."
-MODEL_PATH=~/.local/lib/python3.13/site-packages/openwakeword/resources/models/hey_jarvis_v0.1.onnx
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+MODEL_PATH=~/.local/lib/python${PYTHON_VERSION}/site-packages/openwakeword/resources/models/hey_jarvis_v0.1.onnx
 if [ -f "$MODEL_PATH" ]; then
-    echo "      ✓ hey_jarvis_v0.1.onnx found"
+    echo "      ✓ hey_jarvis_v0.1.onnx found (Python ${PYTHON_VERSION})"
 else
-    echo "      ✗ Model not found at expected path: $MODEL_PATH"
-    echo "      Run: ls ~/.local/lib/python*/site-packages/openwakeword/resources/models/"
-    echo "      Then update WAKEWORD_MODEL in jarvis.py to match."
+    echo "      ✗ Model not found at: $MODEL_PATH"
+    echo "      Available models:"
+    ls ~/.local/lib/python*/site-packages/openwakeword/resources/models/*.onnx 2>/dev/null || echo "      (none found)"
+    echo "      Update WAKEWORD_MODEL in jarvis.py to match the correct path."
 fi
 
-# ── 6. Copy script + audio device check ──────────
+# ── 7. Copy script + audio device check ──────────
 echo "[7/7] Copying jarvis.py to home directory..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cp "$SCRIPT_DIR/jarvis.py" ~/jarvis.py

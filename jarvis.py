@@ -5,6 +5,8 @@ Wake word -> Record -> Transcribe -> Send to Hermes -> Speak response
 """
 
 import os
+import re
+import sys
 import wave
 import tempfile
 import subprocess
@@ -14,8 +16,9 @@ from openwakeword.model import Model
 from faster_whisper import WhisperModel
 
 # --- Config ---
+_PY_VER = f"{sys.version_info.major}.{sys.version_info.minor}"
 WAKEWORD_MODEL = os.path.expanduser(
-    "~/.local/lib/python3.13/site-packages/openwakeword/resources/models/hey_jarvis_v0.1.onnx"
+    f"~/.local/lib/python{_PY_VER}/site-packages/openwakeword/resources/models/hey_jarvis_v0.1.onnx"
 )
 WAKEWORD_THRESHOLD = 0.5
 DEVICE_RATE = 48000        # Hardware sample rate
@@ -26,10 +29,18 @@ RECORD_SECONDS = 8         # Max recording time after wake word
 SILENCE_THRESHOLD = 500    # Amplitude threshold to detect silence
 SILENCE_SECONDS = 2        # Stop recording after this many seconds of silence
 WHISPER_MODEL = "tiny"     # tiny/base/small — tiny is fastest on Pi
+HERMES_TIMEOUT = 60        # Seconds to wait for Hermes response before giving up
 
 # Piper TTS config
 PIPER_BINARY = os.path.expanduser("~/.local/bin/piper")
 PIPER_VOICE = os.path.expanduser("~/.local/share/piper/en_US-lessac-medium.onnx")
+
+# Strip ANSI escape codes (color/formatting) from Hermes output
+_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def strip_ansi(text):
+    return _ANSI_ESCAPE.sub('', text)
 
 
 def downsample(data, from_rate, to_rate):
@@ -50,7 +61,6 @@ def speak(text):
         return
 
     try:
-        # Generate WAV with Piper, pipe directly to aplay
         piper_proc = subprocess.Popen(
             [PIPER_BINARY, "--model", PIPER_VOICE, "--output-raw"],
             stdin=subprocess.PIPE,
@@ -72,6 +82,11 @@ def speak(text):
 
 # --- Init ---
 print("Loading wake word model...")
+if not os.path.exists(WAKEWORD_MODEL):
+    print(f"ERROR: Wake word model not found at:\n  {WAKEWORD_MODEL}")
+    print("Run install.sh to check the correct path, then update WAKEWORD_MODEL in jarvis.py.")
+    sys.exit(1)
+
 oww = Model(wakeword_model_paths=[WAKEWORD_MODEL])
 
 print(f"Loading Whisper ({WHISPER_MODEL})...")
@@ -136,16 +151,23 @@ def send_to_hermes(text):
     """Send transcribed text to Hermes CLI, print and speak response."""
     print(f"\nYou: {text}")
     print("Jarvis: ", end="", flush=True)
-    result = subprocess.run(
-        ["hermes", "-z", text],
-        capture_output=True,
-        text=True,
-    )
-    response = result.stdout.strip() or result.stderr.strip()
+
+    try:
+        result = subprocess.run(
+            ["hermes", "-z", text],
+            capture_output=True,
+            text=True,
+            timeout=HERMES_TIMEOUT,
+        )
+        response = strip_ansi(result.stdout.strip() or result.stderr.strip())
+    except subprocess.TimeoutExpired:
+        response = "Sorry, I didn't get a response in time."
+    except FileNotFoundError:
+        response = "Hermes is not installed or not in PATH."
+
     print(response)
     print()
 
-    # Speak the response
     if response:
         speak(response)
 
@@ -167,7 +189,7 @@ def listen_for_wakeword():
             pcm = np.frombuffer(downsample(data, DEVICE_RATE, TARGET_RATE), dtype=np.int16)
             prediction = oww.predict(pcm)
 
-            for model_name, score in prediction.items():
+            for _, score in prediction.items():
                 if score > WAKEWORD_THRESHOLD:
                     print(f"\n⚡ Wake word detected! (score: {score:.2f})")
                     stream.stop_stream()
