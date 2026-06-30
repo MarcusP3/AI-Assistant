@@ -147,6 +147,9 @@ def transcribe(frames):
     return text
 
 
+EXIT_PHRASE = "thank you jarvis"
+
+
 def send_to_hermes(text):
     """Send transcribed text to Hermes CLI, print and speak response."""
     print(f"\nYou: {text}")
@@ -172,6 +175,31 @@ def send_to_hermes(text):
         speak(response)
 
 
+def conversation_loop():
+    """Keep conversing until the user says the exit phrase."""
+    print("🗣 Conversation mode — say 'Thank you Jarvis' to stop.\n")
+
+    while True:
+        try:
+            frames = record_after_wakeword()
+            text = transcribe(frames)
+
+            if not text:
+                print("(Nothing heard — still listening)\n")
+                continue
+
+            if EXIT_PHRASE in text.lower():
+                print("\nJarvis: You're welcome!")
+                speak("You're welcome!")
+                print("\n✓ Conversation ended. Listening for 'Hey Jarvis'...\n")
+                break
+
+            send_to_hermes(text)
+
+        except Exception as e:
+            print(f"\n[Error] {e} — recovering...\n")
+
+
 def listen_for_wakeword():
     """Continuously listen for wake word."""
     stream = audio.open(
@@ -195,15 +223,9 @@ def listen_for_wakeword():
                     stream.stop_stream()
                     stream.close()
 
-                    frames = record_after_wakeword()
-                    text = transcribe(frames)
+                    conversation_loop()
 
-                    if text:
-                        send_to_hermes(text)
-                    else:
-                        print("(Nothing heard, try again)\n")
-
-                    # Reopen stream
+                    # Reopen stream after conversation ends
                     stream = audio.open(
                         format=pyaudio.paInt16,
                         channels=1,
@@ -213,7 +235,6 @@ def listen_for_wakeword():
                         frames_per_buffer=CHUNK_SIZE,
                     )
                     oww.reset_states()
-                    print("✓ Listening for 'Hey Jarvis'...\n")
 
     except KeyboardInterrupt:
         print("\nStopping...")
