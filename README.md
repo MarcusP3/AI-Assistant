@@ -75,4 +75,4 @@ Key settings at the top of `jarvis.py`:
 
 ---
 
-> **Disclaimer:** This project is vibe-coded. It works on my setup and probably yours, but don't expect production-grade error handling. If it breaks, that's part of the experience.
+> **Disclaimer:** This project is vibe-coded. It works on my setup and probably yours, but don't expect production-grade error handling. If it breaks, that's part of the experience. Thank you for your understanding.
