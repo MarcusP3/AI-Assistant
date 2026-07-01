@@ -65,17 +65,31 @@ def speak(text):
             [PIPER_BINARY, "--model", PIPER_VOICE, "--output-raw"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         aplay_proc = subprocess.Popen(
-            ["aplay", "-r", "22050", "-f", "S16_LE", "-t", "raw", "-"],
+            ["aplay", "-q", "-r", "22050", "-f", "S16_LE", "-t", "raw", "-"],
             stdin=piper_proc.stdout,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
-        piper_proc.stdin.write(text.encode())
-        piper_proc.stdin.close()
+        # Close our copy of piper's stdout so aplay is the only reader;
+        # this lets piper get SIGPIPE if aplay dies, instead of hanging.
         piper_proc.stdout.close()
+        try:
+            piper_proc.stdin.write(text.encode())
+            piper_proc.stdin.close()
+        except BrokenPipeError:
+            pass  # piper exited early; error is reported below
+
         aplay_proc.wait()
+        piper_proc.wait()
+
+        if piper_proc.returncode not in (0, None):
+            err = piper_proc.stderr.read().decode(errors="ignore").strip()
+            print(f"[TTS] Piper failed (exit {piper_proc.returncode}): {err or 'no output'}")
+        elif aplay_proc.returncode not in (0, None):
+            err = aplay_proc.stderr.read().decode(errors="ignore").strip()
+            print(f"[TTS] aplay failed (exit {aplay_proc.returncode}): {err or 'no output'}")
     except Exception as e:
         print(f"[TTS] Error: {e}")
 
@@ -234,7 +248,7 @@ def listen_for_wakeword():
                         input_device_index=DEVICE_INDEX,
                         frames_per_buffer=CHUNK_SIZE,
                     )
-                    oww.reset_states()
+                    oww.reset()
 
     except KeyboardInterrupt:
         print("\nStopping...")
