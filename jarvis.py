@@ -162,23 +162,38 @@ def transcribe(frames):
     return text
 
 
-# Any of these (after stripping punctuation) ends the conversation.
-# All require the word "jarvis" so a plain "thanks" mid-chat won't quit.
+# Explicit phrases (with the name) always end the conversation.
 EXIT_PHRASES = (
     "thank you jarvis",
     "thanks jarvis",
-    "thank you very much jarvis",
     "goodbye jarvis",
     "bye jarvis",
     "stop jarvis",
 )
 
+# Whisper frequently drops the proper noun "Jarvis", so a SHORT standalone
+# farewell also ends the chat. Kept short (<= MAX words) so a longer sentence
+# like "thanks, that was really helpful and..." does NOT quit mid-conversation.
+FAREWELL_STARTERS = ("thank you", "thanks", "thank you very much", "goodbye", "good bye", "bye")
+FAREWELL_MAX_WORDS = 4
+
 
 def is_exit_phrase(text):
-    """True if the (punctuation-stripped) text contains an exit phrase."""
+    """True if the utterance is an exit command (name optional)."""
     cleaned = text.lower().translate(str.maketrans("", "", string.punctuation))
     cleaned = " ".join(cleaned.split())  # collapse whitespace
-    return any(phrase in cleaned for phrase in EXIT_PHRASES)
+    if not cleaned:
+        return False
+    # 1) explicit "... jarvis" phrases
+    if any(phrase in cleaned for phrase in EXIT_PHRASES):
+        return True
+    # 2) short standalone farewell (name may have been dropped by Whisper)
+    words = cleaned.split()
+    if len(words) <= FAREWELL_MAX_WORDS and any(
+        cleaned.startswith(f) for f in FAREWELL_STARTERS
+    ):
+        return True
+    return False
 
 
 def send_to_hermes(text):
