@@ -11,7 +11,10 @@ Description=Jarvis Voice Assistant
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/%u/jarvis.py
+ExecStart=/usr/bin/python3 %h/jarvis.py
+# hermes lives in ~/.hermes/bin and piper/aplay in ~/.local/bin; the default
+# systemd env has neither, so add them or the assistant can't reach its LLM.
+Environment=PATH=%h/.hermes/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
 RestartSec=5
 

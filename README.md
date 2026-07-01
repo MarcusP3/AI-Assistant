@@ -39,6 +39,21 @@ python ~/jarvis.py
 
 Say **"Hey Jarvis"** to wake it up.
 
+> `install.sh` symlinks `~/jarvis.py` to the copy in this repo, so `git pull`
+> updates it automatically — no need to re-copy after pulling changes.
+
+## Updating / Deploying to Another Machine
+
+```bash
+git clone https://github.com/MarcusP3/AI-Assistant.git   # first time only
+cd AI-Assistant
+git pull            # get the latest code
+bash install.sh     # sets up deps + the ~/jarvis.py symlink
+```
+
+After the first `install.sh`, updating any machine is just `git pull` — the
+symlink means the next run uses the new code.
+
 ## Auto-start on Boot (Optional)
 
 ```bash

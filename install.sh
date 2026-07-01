@@ -105,12 +105,14 @@ else
     echo "      Update WAKEWORD_MODEL in jarvis.py to match the correct path."
 fi
 
-# ── 7. Copy script + audio device check ──────────
-echo "[7/7] Copying jarvis.py to home directory..."
+# ── 7. Link script + audio device check ──────────
+echo "[7/7] Linking jarvis.py into home directory..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cp "$SCRIPT_DIR/jarvis.py" ~/jarvis.py
-chmod +x ~/jarvis.py
-echo "      ✓ Copied to ~/jarvis.py"
+chmod +x "$SCRIPT_DIR/jarvis.py"
+# Symlink (not copy) so 'git pull' updates ~/jarvis.py automatically.
+ln -sf "$SCRIPT_DIR/jarvis.py" ~/jarvis.py
+echo "      ✓ Symlinked ~/jarvis.py -> $SCRIPT_DIR/jarvis.py"
+echo "        (git pull now updates it automatically — no re-copy needed)"
 echo ""
 echo "  -- ALSA capture devices (arecord -l) --"
 arecord -l 2>/dev/null || echo "      (no devices found)"
