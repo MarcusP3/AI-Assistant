@@ -12,7 +12,7 @@ echo ""
 # ── 1. System dependencies ────────────────────────
 echo "[1/7] Installing system dependencies..."
 sudo apt update -q
-sudo apt install -y portaudio19-dev curl
+sudo apt install -y portaudio19-dev curl espeak-ng
 echo "      ✓ Done"
 
 # ── 2. Python packages ────────────────────────────

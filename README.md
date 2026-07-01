@@ -76,7 +76,7 @@ Key settings at the top of `jarvis.py`:
 | `DEVICE_INDEX` | `1` | PyAudio index of your mic — run `install.sh` to see your devices |
 | `DEVICE_RATE` | `48000` | Sample rate of your audio device |
 | `WAKEWORD_THRESHOLD` | `0.5` | Wake word sensitivity (0.0–1.0) |
-| `WHISPER_MODEL` | `tiny` | Whisper model size — `tiny` is fastest on Pi |
+| `WHISPER_MODEL` | `base` | Whisper model size — `base` recognizes names like "Jarvis"; `tiny` is faster but less accurate |
 | `PIPER_VOICE` | `en_US-lessac-medium` | TTS voice model |
 
 ## Dependencies

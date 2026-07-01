@@ -7,6 +7,7 @@ Wake word -> Record -> Transcribe -> Send to Hermes -> Speak response
 import os
 import re
 import sys
+import string
 import wave
 import tempfile
 import subprocess
@@ -28,7 +29,7 @@ CHUNK_SIZE = 3840          # 80ms at 48kHz (downsamples to 1280 at 16kHz)
 RECORD_SECONDS = 8         # Max recording time after wake word
 SILENCE_THRESHOLD = 500    # Amplitude threshold to detect silence
 SILENCE_SECONDS = 2        # Stop recording after this many seconds of silence
-WHISPER_MODEL = "tiny"     # tiny/base/small — tiny is fastest on Pi
+WHISPER_MODEL = "base"     # tiny/base/small — base recognizes "Jarvis" far better than tiny
 HERMES_TIMEOUT = 60        # Seconds to wait for Hermes response before giving up
 
 # Piper TTS config
@@ -161,7 +162,23 @@ def transcribe(frames):
     return text
 
 
-EXIT_PHRASE = "thank you jarvis"
+# Any of these (after stripping punctuation) ends the conversation.
+# All require the word "jarvis" so a plain "thanks" mid-chat won't quit.
+EXIT_PHRASES = (
+    "thank you jarvis",
+    "thanks jarvis",
+    "thank you very much jarvis",
+    "goodbye jarvis",
+    "bye jarvis",
+    "stop jarvis",
+)
+
+
+def is_exit_phrase(text):
+    """True if the (punctuation-stripped) text contains an exit phrase."""
+    cleaned = text.lower().translate(str.maketrans("", "", string.punctuation))
+    cleaned = " ".join(cleaned.split())  # collapse whitespace
+    return any(phrase in cleaned for phrase in EXIT_PHRASES)
 
 
 def send_to_hermes(text):
@@ -202,7 +219,7 @@ def conversation_loop():
                 print("(Nothing heard — still listening)\n")
                 continue
 
-            if EXIT_PHRASE in text.lower():
+            if is_exit_phrase(text):
                 print("\nJarvis: You're welcome!")
                 speak("You're welcome!")
                 print("\n✓ Conversation ended. Listening for 'Hey Jarvis'...\n")
