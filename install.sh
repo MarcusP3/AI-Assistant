@@ -3,6 +3,7 @@
 # Raspberry Pi 5 + Hermes + OpenWakeWord + Whisper
 
 set -e  # Stop on any error
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "================================================"
 echo "  Jarvis Voice Assistant - Install Script"
@@ -17,7 +18,7 @@ echo "      ✓ Done"
 
 # ── 2. Python packages ────────────────────────────
 echo "[2/7] Installing Python packages..."
-pip install openwakeword faster-whisper pyaudio numpy --break-system-packages
+pip install -r "$SCRIPT_DIR/requirements.txt" --break-system-packages
 echo "      ✓ Done"
 
 # ── 3. Install Hermes Agent ───────────────────────
@@ -107,7 +108,6 @@ fi
 
 # ── 7. Link script + audio device check ──────────
 echo "[7/7] Linking jarvis.py into home directory..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chmod +x "$SCRIPT_DIR/jarvis.py"
 # Symlink (not copy) so 'git pull' updates ~/jarvis.py automatically.
 ln -sf "$SCRIPT_DIR/jarvis.py" ~/jarvis.py
