@@ -26,9 +26,10 @@ DEVICE_RATE = 48000        # Hardware sample rate
 TARGET_RATE = 16000        # Rate required by openWakeWord and Whisper
 DEVICE_INDEX = 1           # USB-C Speaker/Mic
 CHUNK_SIZE = 3840          # 80ms at 48kHz (downsamples to 1280 at 16kHz)
-RECORD_SECONDS = 8         # Max recording time after wake word
+RECORD_SECONDS = 8         # Max recording time after speech starts
+SPEECH_WAIT_SECONDS = 10   # Max seconds to wait for speech to begin
 SILENCE_THRESHOLD = 500    # Amplitude threshold to detect silence
-SILENCE_SECONDS = 2        # Stop recording after this many seconds of silence
+SILENCE_SECONDS = 2        # Stop recording after this many seconds of trailing silence
 WHISPER_MODEL = "base"     # tiny/base/small — base recognizes "Jarvis" far better than tiny
 HERMES_TIMEOUT = 60        # Seconds to wait for Hermes response before giving up
 
@@ -113,7 +114,12 @@ print("\n✓ Ready. Say 'Hey Jarvis' to begin.\n")
 
 
 def record_after_wakeword():
-    """Record audio until silence or max duration."""
+    """Wait for speech to begin, then record until trailing silence.
+
+    Returns None if the user never spoke. The caller must skip transcription
+    in that case — Whisper hallucinates phrases like "Thank you." on silent
+    audio, which would falsely trigger the exit phrase and end the chat.
+    """
     stream = audio.open(
         format=pyaudio.paInt16,
         channels=1,
@@ -125,24 +131,47 @@ def record_after_wakeword():
 
     print("🎙 Listening...")
     frames = []
+    speech_started = False
     silent_chunks = 0
-    max_chunks = int(DEVICE_RATE / CHUNK_SIZE * RECORD_SECONDS)
-    silence_chunks_limit = int(DEVICE_RATE / CHUNK_SIZE * SILENCE_SECONDS)
+    waited_chunks = 0
+    speech_chunks = 0
+    chunks_per_sec = DEVICE_RATE / CHUNK_SIZE
+    max_wait_chunks = int(chunks_per_sec * SPEECH_WAIT_SECONDS)
+    max_speech_chunks = int(chunks_per_sec * RECORD_SECONDS)
+    silence_chunks_limit = int(chunks_per_sec * SILENCE_SECONDS)
 
-    for _ in range(max_chunks):
+    while True:
         data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+        amplitude = np.abs(np.frombuffer(data, dtype=np.int16)).mean()
+
+        if not speech_started:
+            # Waiting for the user to start talking — don't count this
+            # toward silence, and don't keep the (empty) audio.
+            if amplitude >= SILENCE_THRESHOLD:
+                speech_started = True
+                frames.append(downsample(data, DEVICE_RATE, TARGET_RATE))
+            else:
+                waited_chunks += 1
+                if waited_chunks >= max_wait_chunks:
+                    break  # user never spoke
+            continue
+
         frames.append(downsample(data, DEVICE_RATE, TARGET_RATE))
-        amplitude = np.frombuffer(data, dtype=np.int16)
-        if np.abs(amplitude).mean() < SILENCE_THRESHOLD:
+        speech_chunks += 1
+
+        if amplitude < SILENCE_THRESHOLD:
             silent_chunks += 1
+            if silent_chunks >= silence_chunks_limit:
+                break  # trailing silence — user finished talking
         else:
             silent_chunks = 0
-        if silent_chunks >= silence_chunks_limit:
-            break
+
+        if speech_chunks >= max_speech_chunks:
+            break  # hit max recording length
 
     stream.stop_stream()
     stream.close()
-    return frames
+    return frames if speech_started else None
 
 
 def transcribe(frames):
@@ -196,14 +225,24 @@ def is_exit_phrase(text):
     return False
 
 
-def send_to_hermes(text):
-    """Send transcribed text to Hermes CLI, print and speak response."""
+def send_to_hermes(text, continue_session=False):
+    """Send transcribed text to Hermes CLI, print and speak response.
+
+    continue_session=True adds -c so Hermes resumes its most recent session,
+    keeping conversation memory across turns. The first turn omits it so each
+    'Hey Jarvis' conversation starts a fresh session.
+    """
     print(f"\nYou: {text}")
     print("Jarvis: ", end="", flush=True)
 
+    cmd = ["hermes"]
+    if continue_session:
+        cmd.append("-c")
+    cmd += ["-z", text]
+
     try:
         result = subprocess.run(
-            ["hermes", "-z", text],
+            cmd,
             capture_output=True,
             text=True,
             timeout=HERMES_TIMEOUT,
@@ -225,9 +264,18 @@ def conversation_loop():
     """Keep conversing until the user says the exit phrase."""
     print("🗣 Conversation mode — say 'Thank you Jarvis' to stop.\n")
 
+    first_turn = True
     while True:
         try:
             frames = record_after_wakeword()
+
+            if frames is None:
+                # No speech within SPEECH_WAIT_SECONDS — assume the user
+                # walked away. End the conversation instead of looping forever.
+                print("\n(No speech detected — ending conversation.)")
+                print("✓ Listening for 'Hey Jarvis'...\n")
+                break
+
             text = transcribe(frames)
 
             if not text:
@@ -240,7 +288,8 @@ def conversation_loop():
                 print("\n✓ Conversation ended. Listening for 'Hey Jarvis'...\n")
                 break
 
-            send_to_hermes(text)
+            send_to_hermes(text, continue_session=not first_turn)
+            first_turn = False
 
         except Exception as e:
             print(f"\n[Error] {e} — recovering...\n")
